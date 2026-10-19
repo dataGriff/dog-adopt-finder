@@ -1,0 +1,43 @@
+{
+  "name": "dog-adopt-finder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Captures the dogs listed on rescue websites as snapshots and posts them to the Dog Adopt API. Set up, not switched on: no schedule, live fetching off by default.",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "fixtures:build": "node scripts/bundle-fixtures.mjs",
+    "fixtures:check": "node scripts/bundle-fixtures.mjs --check",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "pnpm fixtures:check && pnpm lint && pnpm typecheck && pnpm test && wrangler deploy --dry-run --outdir=.wrangler/dry-run"
+  },
+  "dependencies": {
+    "@dogadopt/contracts": "github:dataGriff/dog-adopt-spec#ccr-36d5f29f-ktwvoo",
+    "cheerio": "^1.2.0",
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.151.2"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd",
+      "sharp"
+    ]
+  }
+}

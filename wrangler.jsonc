@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dog-adopt-finder",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // The finder is set up but not switched on. No cron fires; a capture is
+  // started by hand with POST /run/:adapter. When (if) live capture is
+  // approved, add a schedule here, e.g. daily at 08:00 UTC:
+  //   "triggers": { "crons": ["0 8 * * *"] }
+  "triggers": { "crons": [] },
+
+  "vars": {
+    "API_BASE_URL": "http://localhost:8787"
+    // FINDER_LIVE_FETCH is deliberately absent. Setting it to an adapter
+    // name (e.g. "cardiff-dogs-home") is the only way live fetching turns on.
+  },
+
+  // Secrets (wrangler secret put): FINDER_RUN_TOKEN, FINDER_SERVICE_TOKEN
+
+  "queues": {
+    "producers": [
+      { "binding": "SNAPSHOTS", "queue": "dogadopt-finder-snapshots" }
+    ],
+    "consumers": [
+      {
+        "queue": "dogadopt-finder-snapshots",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "retry_delay": 60
+      }
+    ]
+  }
+}
