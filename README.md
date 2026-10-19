@@ -82,3 +82,7 @@ wrangler secret put FINDER_SERVICE_TOKEN   # the token the Dogs API was configur
 ```
 
 and set `API_BASE_URL` for production in `wrangler.jsonc`.
+
+## Contracts pin
+
+`@dogadopt/contracts` is installed from git pinned to a commit of [dog-adopt-spec](https://github.com/dataGriff/dog-adopt-spec) (currently `831a65676ba4a9e4bda06de644f0b7611096e57f`), so an install without the lockfile still resolves to exactly what was tested. To take a newer contract: change the sha in `package.json`, run `pnpm install`, then `pnpm typecheck && pnpm test`. On a release, pin a tag instead.

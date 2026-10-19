@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import { rescueSnapshotSchema } from '@dogadopt/contracts';
 import { cardiffBrokenListing, cardiffDogsHome, CARDIFF_LISTING_URL } from './index.js';
-import { cleanBreedNames, externalIdFromUrl, parseAge, parseCats, parseDogs, parseGender, parseKids, parseSize } from './parse.js';
+import { load } from 'cheerio';
+import { cleanBreedNames, discoverDogs, externalIdFromUrl, parseAge, parseBreeds, parseCats, parseCompatibility, parseDogs, parseGender, parseKids, parseSize } from './parse.js';
 
 const capturedAt = new Date('2026-10-19T08:00:00Z');
 
@@ -47,9 +48,9 @@ describe('Scenario: Only factual data is captured', () => {
     expect(max).toMatchObject({ name: 'Max', age: 'Puppy', size: 'Large', gender: 'Male', breeds: ['Labrador', 'Collie'] });
     expect(tim).toMatchObject({ name: 'Tiny Tim', age: 'Senior', size: 'Small', gender: 'Male', breeds: [] });
   });
-  it('leaves compatibility flags null where the site does not say', () => {
-    expect(bella).toMatchObject({ goodWithKids: true, goodWithCats: false, goodWithDogs: true });
-    expect(max).toMatchObject({ goodWithKids: true, goodWithCats: true, goodWithDogs: false });
+  it('leaves compatibility flags null where the site does not say or only hedges', () => {
+    expect(bella).toMatchObject({ goodWithKids: true, goodWithCats: false, goodWithDogs: null }); // "may be able" is not a yes
+    expect(max).toMatchObject({ goodWithKids: true, goodWithCats: null, goodWithDogs: false });
     expect(tim).toMatchObject({ goodWithKids: false, goodWithCats: null, goodWithDogs: null });
   });
   it('keeps imageUrl as a link to the rescue site and nothing else', () => {
@@ -89,11 +90,68 @@ describe('parsing rules ported from the previous collector', () => {
     expect(parseKids("I'm suitable to live with children")).toBe(true);
     expect(parseKids('not tested')).toBeNull();
     expect(parseCats("I can't live with cats")).toBe(false);
-    expect(parseCats('I may be able to live with cats')).toBe(true);
     expect(parseCats('')).toBeNull();
     expect(parseDogs("I can't live with other dogs")).toBe(false);
     expect(parseDogs('I am able to live with other dogs')).toBe(true);
     expect(parseDogs('unknown')).toBeNull();
+  });
+});
+
+describe('Scenario: Only factual data is captured (negations win, hedges are unknown)', () => {
+  it.each<[string, boolean | null]>([
+    ["I'm not suitable to live with children", false],
+    ["I'm not able to live with cats", false],
+    ['I am not able to live with other dogs', false],
+    ['I may be able to live with cats', null],
+    ['I can live with children over 10', true],
+    ['adults only', false],
+    ['', null],
+    ['I cannot live with cats', false],
+    ['No other dogs please', false],
+    ['I would like to be the only dog', false],
+    ['Not dog friendly', false],
+    ["We haven't tested me with cats yet", null],
+    ['To be assessed', null],
+    ['I could possibly live with a calm dog', null],
+    ['I am good with other dogs', true],
+    ["I'm fine with cats", true],
+    ['Lorem ipsum', null],
+  ])('%j -> %s', (text, expected) => {
+    expect(parseCompatibility(text)).toBe(expected);
+    expect(parseKids(text)).toBe(expected);
+    expect(parseCats(text)).toBe(expected);
+    expect(parseDogs(text)).toBe(expected);
+  });
+});
+
+describe('Scenario: Live fetching can be enabled for one adapter at a time (only the rescue host is ever followed)', () => {
+  const listing = `<html><body>
+    <div class="vc_gitem-post-data-source-post_title"><a href="https://www.cardiffdogshome.co.uk/dog/bella-2/">Bella</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="https://evil.example/track">Sponsor</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="//evil.example/dog/trick/">Trick</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="/news/open-day/">Open day</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="https://www.cardiffdogshome.co.uk/about/">About</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="/dog/Bella-2/">Bella again</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="/dog/max/">Max</a></div>
+    <div class="vc_gitem-post-data-source-post_title"><a href="javascript:alert(1)">Nope</a></div>
+  </body></html>`;
+  it('discovers only same-origin /dog/ links, once per externalId', () => {
+    expect(discoverDogs(listing)).toEqual([
+      { externalId: 'bella-2', url: 'https://www.cardiffdogshome.co.uk/dog/bella-2/', name: 'Bella' },
+      { externalId: 'max', url: 'https://www.cardiffdogshome.co.uk/dog/max/', name: 'Max' },
+    ]);
+  });
+});
+
+describe('breed heuristics only take capitalised breed words', () => {
+  const page = (text: string) => load(`<html><body><h1>Hello, I'm Rufus</h1><div class="entry-content"><p>${text}</p></div></body></html>`);
+  it('prose with a lower-case adjective before "cross" yields no breed', () => {
+    expect(parseBreeds(page('Rufus is a lovely cross who adores people.'), 'Rufus')).toEqual([]);
+    expect(parseBreeds(page('Rufus adores people. He is a gentle cross and loves walks.'), 'Rufus')).toEqual([]);
+  });
+  it('a capitalised breed before "cross" is still found', () => {
+    expect(parseBreeds(page('Rufus came to us last week. Staffie cross, loves everyone.'), 'Rufus')).toEqual(['Staffie']);
+    expect(parseBreeds(page('A Border Collie type looking for a job.'), 'Rufus')).toEqual(['Border Collie']);
   });
   it('externalId is the lower-cased last path segment', () => {
     expect(externalIdFromUrl('https://www.cardiffdogshome.co.uk/dog/Bella-2/')).toBe('bella-2');

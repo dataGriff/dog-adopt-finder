@@ -25,17 +25,27 @@ describe('Scenario: The schedule ships disabled', () => {
     expect(body.dogCount).toBe(3);
     expect(e.sent).toHaveLength(1);
   });
-  it('the run endpoint needs the run token', async () => {
+  it('the run endpoint needs the run token and answers with a contract problem', async () => {
     const e = env();
-    expect((await createApp().request('/run/cardiff-dogs-home', { method: 'POST' }, e)).status).toBe(401);
-    expect((await createApp().request('/run/cardiff-dogs-home', { method: 'POST', headers: { Authorization: 'Bearer wrong' } }, e)).status).toBe(401);
+    const attempts: Record<string, string>[] = [{}, { Authorization: 'Bearer wrong' }, { Authorization: 'Basic run-token' }, { Authorization: 'Bearer run-token extra' }, { Authorization: 'run-token' }];
+    for (const headers of attempts) {
+      const res = await createApp().request('/run/cardiff-dogs-home', { method: 'POST', headers }, e);
+      expect(res.status).toBe(401);
+      expect(res.headers.get('content-type')).toBe('application/problem+json');
+      expect(await res.json()).toMatchObject({ errorCode: 'unauthorized', status: 401, type: expect.stringContaining('/problems/') });
+    }
     expect((await createApp().request('/run/cardiff-dogs-home', { method: 'POST', headers: { Authorization: 'Bearer run-token' } }, { ...e, FINDER_RUN_TOKEN: undefined })).status).toBe(401);
     expect(e.sent).toHaveLength(0);
   });
-  it('unknown adapters and modes are rejected', async () => {
+  it('unknown adapters and modes are rejected with contract problems', async () => {
     const e = env();
-    expect((await createApp().request('/run/nope', { method: 'POST', headers: { Authorization: 'Bearer run-token' } }, e)).status).toBe(404);
-    expect((await createApp().request('/run/cardiff-dogs-home?mode=scrape', { method: 'POST', headers: { Authorization: 'Bearer run-token' } }, e)).status).toBe(400);
+    const notFound = await createApp().request('/run/nope', { method: 'POST', headers: { Authorization: 'Bearer run-token' } }, e);
+    expect(notFound.status).toBe(404);
+    expect(notFound.headers.get('content-type')).toBe('application/problem+json');
+    expect(await notFound.json()).toMatchObject({ errorCode: 'not_found', status: 404 });
+    const badMode = await createApp().request('/run/cardiff-dogs-home?mode=scrape', { method: 'POST', headers: { Authorization: 'Bearer run-token' } }, e);
+    expect(badMode.status).toBe(400);
+    expect(await badMode.json()).toMatchObject({ errorCode: 'validation_failed', errors: [{ path: 'mode' }] });
   });
   it('live mode through the endpoint fails closed and reports it', async () => {
     const e = env();

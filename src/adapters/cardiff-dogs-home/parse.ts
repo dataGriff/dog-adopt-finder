@@ -10,7 +10,17 @@ import type { DiscoveredDog } from '../types.js';
 
 export const CARDIFF_ORIGIN = 'https://www.cardiffdogshome.co.uk';
 
-/** Each dog on the listing is a grid item whose title links to the dog's page. */
+/** Dog pages live under /dog/ on the rescue's own host. Anything else on the listing is never followed. */
+export function isDogPageUrl(url: URL): boolean {
+  return url.origin === CARDIFF_ORIGIN && url.pathname.startsWith('/dog/');
+}
+
+/**
+ * Each dog on the listing is a grid item whose title links to the dog's
+ * page. Only same-origin /dog/ links are kept, so a sponsor, partner or
+ * injected link on the listing can never make the live fetcher leave the
+ * rescue's host. Dogs are deduplicated by externalId.
+ */
 export function discoverDogs(listingHtml: string): DiscoveredDog[] {
   const $ = load(listingHtml);
   const found: DiscoveredDog[] = [];
@@ -19,11 +29,17 @@ export function discoverDogs(listingHtml: string): DiscoveredDog[] {
     const href = $(el).attr('href');
     const name = $(el).text().trim();
     if (!href) return;
-    const url = new URL(href, CARDIFF_ORIGIN).toString();
-    const externalId = externalIdFromUrl(url);
-    if (!externalId || seen.has(url)) return;
-    seen.add(url);
-    found.push({ externalId, url, name: name || undefined });
+    let url: URL;
+    try {
+      url = new URL(href, CARDIFF_ORIGIN);
+    } catch {
+      return;
+    }
+    if (!isDogPageUrl(url)) return;
+    const externalId = externalIdFromUrl(url.toString());
+    if (!externalId || seen.has(externalId)) return;
+    seen.add(externalId);
+    found.push({ externalId, url: url.toString(), name: name || undefined });
   });
   return found;
 }
@@ -91,26 +107,66 @@ export function parseSize(text: string): FoundDog['size'] {
 }
 
 // Compatibility: the contract wants null when the site does not say, so
-// unlike the old script nothing defaults to false.
-export function parseKids(text: string): boolean | null {
-  const lower = text.toLowerCase();
-  if (lower.includes('adults only') || lower.includes("can't live with children") || lower.includes('cannot live with children')) return false;
-  if (lower.includes('suitable to live with children') || lower.includes('suitable to live with older children')) return true;
+// nothing defaults to false. Negations win over any positive phrase they
+// contain ("not suitable to live with children" must not read as "suitable
+// to live with children"), and a hedged statement is unknown, not true.
+const NEGATIVE = [
+  /\bnot\s+(?:be\s+)?(?:suitable|able|good|happy|fine|ok|okay|allowed)\b/,
+  /\b(?:cannot|can't|cant|can\s+not|couldn't|won't|unable\s+to|shouldn't|should\s+not)\b/,
+  /\bno\s+(?:children|kids|cats|dogs|other\s+dogs|other\s+pets)\b/,
+  /\badults?\s+only\b/,
+  /\bonly\s+(?:dog|pet)\b/,
+  /\bwithout\s+(?:children|kids|cats|dogs|other\s+dogs)\b/,
+  /\b(?:child|cat|dog|pet)[-\s]?free\b/,
+  /\bunsuitable\b/,
+  /\bnot\s+(?:\w+\s+)?friendly\b/,
+  /\b(?:isn't|aren't|doesn't|don't|does\s+not|do\s+not|never)\b/,
+];
+const HEDGED = [
+  /\b(?:may|might|could)\b/,
+  /\bpossibl[ey]\b/,
+  /\bpotentially\b/,
+  /\bto\s+be\s+(?:assessed|tested|confirmed|decided)\b/,
+  /\b(?:not\s+yet\s+)?(?:assessed|tested)\b/,
+  /\bunknown\b/,
+  /\btbc\b/,
+  /\btbd\b/,
+  /\bdepend(?:s|ing)?\b/,
+  /\bask\b/,
+];
+const POSITIVE = [
+  /\b(?:can|able\s+to|suitable\s+to|happy\s+to|ok\s+to|okay\s+to)\s+live\s+with\b/,
+  /\b(?:good|fine|happy|great|ok|okay)\s+with\b/,
+  /\bsuitable\s+for\b/,
+  /\blives?\s+(?:happily\s+)?with\b/,
+  /\bgets?\s+on\s+with\b/,
+  /\bfriendly\b/,
+];
+
+/**
+ * Reads one compatibility cell. false when any negation is present, null
+ * when the statement is hedged, absent or unrecognised, true only on an
+ * unqualified positive.
+ */
+export function parseCompatibility(text: string): boolean | null {
+  const lower = text.toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+  if (!lower) return null;
+  if (NEGATIVE.some((re) => re.test(lower))) return false;
+  if (HEDGED.some((re) => re.test(lower))) return null;
+  if (POSITIVE.some((re) => re.test(lower))) return true;
   return null;
+}
+
+export function parseKids(text: string): boolean | null {
+  return parseCompatibility(text);
 }
 
 export function parseCats(text: string): boolean | null {
-  const lower = text.toLowerCase();
-  if (lower.includes("can't live with cats") || lower.includes('cannot live with cats')) return false;
-  if (lower.includes('able to live with cats')) return true;
-  return null;
+  return parseCompatibility(text);
 }
 
 export function parseDogs(text: string): boolean | null {
-  const lower = text.toLowerCase();
-  if (lower.includes("can't live with") || lower.includes('cannot live with')) return false;
-  if (lower.includes('able to live with other dogs')) return true;
-  return null;
+  return parseCompatibility(text);
 }
 
 /** A link to the rescue's own image, never downloaded. */
@@ -168,11 +224,16 @@ export function parseBreeds($: CheerioAPI, dogName: string): string[] {
     }
   }
 
-  // "<Breed> cross|mix|type"
-  const crossMix = allText.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:cross|mix|type)\b/i);
+  // "<Breed> cross|mix|type": case-sensitive on the breed words so that only
+  // capitalised words (breed names) are taken, and filler stripped so a
+  // sentence like "a lovely cross who adores people" yields nothing.
+  const crossMix = allText.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\s+(?:cross|mix|type|Cross|Mix|Type)\b/);
   if (crossMix) {
-    const result = cleanBreedNames(crossMix[1]!);
-    if (result.length) return result;
+    const text = crossMix[1]!.replace(FILLER, '').trim();
+    if (text.length > 2) {
+      const result = cleanBreedNames(text);
+      if (result.length) return result;
+    }
   }
 
   // "(Lurcher)"

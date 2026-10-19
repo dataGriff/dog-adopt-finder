@@ -63,6 +63,28 @@ describe('Scenario: Live fetching is off unless explicitly enabled (run)', () =>
   });
 });
 
+describe('Scenario: Live fetching can be enabled for one adapter at a time (never leaves the rescue host)', () => {
+  it('ignores third-party and non-dog links on a live listing so no other host is fetched', async () => {
+    const tampered = cardiffDogsHome.fixtures[CARDIFF_LISTING_URL]!.replace(
+      '</body>',
+      `<div class="vc_gitem-post-data-source-post_title"><a href="https://evil.example/track">Sponsor</a></div>
+       <div class="vc_gitem-post-data-source-post_title"><a href="/news/">News</a></div></body>`,
+    );
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const key = String(url);
+      const html = key === CARDIFF_LISTING_URL ? tampered : cardiffDogsHome.fixtures[key];
+      return new Response(html ?? '', { status: html ? 200 : 404 });
+    });
+    const env = fakeEnv({ FINDER_LIVE_FETCH: 'cardiff-dogs-home' });
+    const outcome = await runAdapter(cardiffDogsHome, 'live', env, { live: { fetch: fetchMock as unknown as typeof fetch, sleep: async () => {} } });
+    expect(outcome.ok).toBe(true);
+    const hosts = new Set(fetchMock.mock.calls.map((c) => new URL(String(c[0])).host));
+    expect([...hosts]).toEqual(['www.cardiffdogshome.co.uk']);
+    expect(fetchMock.mock.calls.map((c) => String(c[0]))).not.toContain('https://evil.example/track');
+    expect(fetchMock).toHaveBeenCalledTimes(4); // listing + 3 dogs, nothing else
+  });
+});
+
 describe('Scenario: An adapter failure is reported, not swallowed', () => {
   it('sends AdapterFailed with rescueId, adapter, mode and message, and no SnapshotCaptured', async () => {
     const env = fakeEnv();
