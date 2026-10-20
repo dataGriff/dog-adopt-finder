@@ -86,3 +86,7 @@ and set `API_BASE_URL` for production in `wrangler.jsonc`.
 ## Contracts pin
 
 `@dogadopt/contracts` is installed from git pinned to a commit of [dog-adopt-spec](https://github.com/dataGriff/dog-adopt-spec) (currently `831a65676ba4a9e4bda06de644f0b7611096e57f`), so an install without the lockfile still resolves to exactly what was tested. To take a newer contract: change the sha in `package.json`, run `pnpm install`, then `pnpm typecheck && pnpm test`. On a release, pin a tag instead.
+
+### Installing the contracts in CI
+
+`dog-adopt-spec` is a private repository, so GitHub Actions needs a token that can read it. Create a fine-grained personal access token with **Contents: read** on `dataGriff/dog-adopt-spec` and store it in this repository as the secret `CONTRACTS_READ_TOKEN`. The CI and deploy workflows rewrite every GitHub clone URL to use it before `pnpm install`. If the spec repository is made public the secret is no longer needed.
