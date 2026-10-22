@@ -1,0 +1,30 @@
+version: "3"
+
+tasks:
+  default:
+    desc: List tasks
+    cmds: [task --list]
+  install:
+    desc: Install dependencies
+    cmds: [pnpm install]
+  dev:
+    desc: Run the worker locally with wrangler
+    cmds: [pnpm dev]
+  run:fixture:
+    desc: Capture an adapter from fixtures against a running wrangler dev (ADAPTER=cardiff-dogs-home, FINDER_RUN_TOKEN from .dev.vars)
+    vars:
+      ADAPTER: '{{.ADAPTER | default "cardiff-dogs-home"}}'
+    cmds:
+      - curl -sS -X POST -H "Authorization: Bearer $FINDER_RUN_TOKEN" "http://localhost:8787/run/{{.ADAPTER}}?mode=fixture"
+  fixtures:
+    desc: Rebuild fixtures.generated.ts from fixtures/*.html
+    cmds: [pnpm fixtures:build]
+  lint:
+    cmds: [pnpm lint]
+  typecheck:
+    cmds: [pnpm typecheck]
+  test:
+    cmds: [pnpm test]
+  check:
+    desc: Everything CI runs
+    cmds: [pnpm check]

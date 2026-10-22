@@ -1,0 +1,7 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# Bearer token required by POST /run/:adapter
+FINDER_RUN_TOKEN=change-me
+# Service token the Dogs API issued to the finder (sent on ingestRescueSnapshot)
+FINDER_SERVICE_TOKEN=change-me
+# Leave unset. Naming an adapter here is the only way live fetching turns on.
+# FINDER_LIVE_FETCH=cardiff-dogs-home
