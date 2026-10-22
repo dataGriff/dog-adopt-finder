@@ -85,8 +85,6 @@ and set `API_BASE_URL` for production in `wrangler.jsonc`.
 
 ## Contracts pin
 
-`@dogadopt/contracts` is installed from git pinned to a commit of [dog-adopt-spec](https://github.com/dataGriff/dog-adopt-spec) (currently `831a65676ba4a9e4bda06de644f0b7611096e57f`), so an install without the lockfile still resolves to exactly what was tested. To take a newer contract: change the sha in `package.json`, run `pnpm install`, then `pnpm typecheck && pnpm test`. On a release, pin a tag instead.
+`@dogadopt/contracts` is installed from git pinned to a commit of [dog-adopt-spec](https://github.com/dataGriff/dog-adopt-spec) (currently `831a65676ba4a9e4bda06de644f0b7611096e57f`), so an install without the lockfile still resolves to exactly what was tested. The lockfile resolves it to the GitHub tarball of that commit (`codeload.github.com/.../tar.gz/<sha>`), so installing needs neither git nor a token while dog-adopt-spec stays public. Move the pin with `pnpm add github:dataGriff/dog-adopt-spec#<new sha>` rather than editing `package.json` or `pnpm-lock.yaml` by hand, so the lockfile is regenerated with it.
 
-### Installing the contracts in CI
-
-pnpm clones `dog-adopt-spec` over git and may choose an SSH URL, which GitHub runners cannot use, so the CI and deploy workflows rewrite every GitHub clone URL to HTTPS with a token before `pnpm install`. `dog-adopt-spec` is public, so the workflow's own `GITHUB_TOKEN` is enough. If the spec repository is ever made private again, create a fine-grained personal access token with **Contents: read** on `dataGriff/dog-adopt-spec` and store it here as the secret `CONTRACTS_READ_TOKEN`.
+To take a newer contract: move the pin as above, then `pnpm typecheck && pnpm test`. On a release, pin a tag instead.
